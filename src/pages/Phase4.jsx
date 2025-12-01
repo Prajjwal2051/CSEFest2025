@@ -16,20 +16,45 @@ const Phase4 = () => {
     const currentQIndex = gameState.phaseProgress[4].currentQuestion || 0;
     const currentQuestion = phase4Questions[currentQIndex];
 
-    // Initialize code only when question changes
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const [language, setLanguage] = useState('c');
+
+    // Initialize code only when question changes or language changes
     React.useEffect(() => {
         if (currentQuestion) {
-            setCode(currentQuestion.buggyCode);
+            if (language === 'python') {
+                setCode(currentQuestion.buggyCodePython || "# No Python version available");
+            } else if (language === 'c') {
+                setCode(currentQuestion.buggyCodeC || "// No C version available");
+            } else {
+                setCode(currentQuestion.buggyCode);
+            }
             setOutput('');
             setStatus('IDLE');
+            setElapsedTime(0);
         }
-    }, [currentQuestion]);
+    }, [currentQuestion, language]);
+
+    // Timer effect
+    React.useEffect(() => {
+        let interval;
+        if (status !== 'SUCCESS') {
+            interval = setInterval(() => {
+                setElapsedTime(prev => prev + 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [status, currentQuestion]);
 
     const handleRun = async () => {
         setStatus('RUNNING');
         setOutput('Compiling & Executing...');
 
-        const result = await runCode(code, currentQuestion.language_id);
+        let langId = 54; // C++
+        if (language === 'python') langId = 71;
+        if (language === 'c') langId = 50;
+
+        const result = await runCode(code, langId);
 
         if (result.error) {
             setOutput(`System Error: ${result.error}`);
@@ -80,22 +105,41 @@ const Phase4 = () => {
                 {/* Editor */}
                 <div className="glass-card overflow-hidden flex flex-col">
                     <div className="bg-white/5 p-2 flex justify-between items-center border-b border-white/10">
-                        <span className="text-xs font-mono text-gray-400">main.cpp</span>
-                        <button
-                            onClick={handleRun}
-                            disabled={status === 'RUNNING' || status === 'SUCCESS'}
-                            className={`flex items-center gap-2 px-4 py-1 rounded text-sm font-bold transition-colors ${status === 'RUNNING' ? 'bg-gray-600 cursor-not-allowed' :
+                        <div className="flex items-center gap-4">
+                            <select
+                                className="bg-white/10 text-white text-xs p-1 rounded border border-white/20 outline-none cursor-pointer hover:bg-white/20"
+                                value={language}
+                                onChange={(e) => setLanguage(e.target.value)}
+                            >
+                                <option value="c" className="bg-gray-900">C</option>
+                                <option value="cpp" className="bg-gray-900">C++</option>
+                                <option value="python" className="bg-gray-900">Python</option>
+                            </select>
+                            <span className="text-xs font-mono text-gray-400">
+                                {language === 'python' ? 'main.py' : language === 'c' ? 'main.c' : 'main.cpp'}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <div className="text-mono text-primary font-bold">
+                                ⏱️ {Math.floor(elapsedTime / 60)}:{String(elapsedTime % 60).padStart(2, '0')}
+                            </div>
+                            <button
+                                onClick={handleRun}
+                                disabled={status === 'RUNNING' || status === 'SUCCESS'}
+                                className={`flex items-center gap-2 px-4 py-1 rounded text-sm font-bold transition-colors ${status === 'RUNNING' ? 'bg-gray-600 cursor-not-allowed' :
                                     status === 'SUCCESS' ? 'bg-success text-black' :
                                         'bg-primary text-black hover:bg-white'
-                                }`}
-                        >
-                            {status === 'RUNNING' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                            {status === 'RUNNING' ? 'EXECUTING' : 'RUN CODE'}
-                        </button>
+                                    }`}
+                            >
+                                {status === 'RUNNING' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                                {status === 'RUNNING' ? 'EXECUTING' : 'RUN CODE'}
+                            </button>
+                        </div>
                     </div>
                     <Editor
                         height="100%"
-                        defaultLanguage="cpp"
+                        defaultLanguage={language === 'python' ? 'python' : 'cpp'}
                         value={code}
                         onChange={(value) => setCode(value)}
                         theme="vs-dark"

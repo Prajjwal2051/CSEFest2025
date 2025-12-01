@@ -9,10 +9,39 @@ import { Play, Loader2, Lock, Unlock } from 'lucide-react';
 const FinalPhase = () => {
     const { gameState, updatePhaseProgress, completePhase, teamId } = useGame();
     const [activeTask, setActiveTask] = useState(0);
-    const [code, setCode] = useState('// Write your solution here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    // Read input from stdin\n    // Print output to stdout\n    return 0;\n}');
+    const [language, setLanguage] = useState('c');
+    const [code, setCode] = useState('// Write your solution here\n#include <stdio.h>\n\nint main() {\n    // Read input from stdin\n    // Print output to stdout\n    return 0;\n}');
     const [output, setOutput] = useState('');
     const [status, setStatus] = useState('IDLE');
+    const [elapsedTime, setElapsedTime] = useState(0);
     const navigate = useNavigate();
+
+    // Timer effect
+    React.useEffect(() => {
+        let interval;
+        const isSolved = gameState.phaseProgress[5]?.solvedParts?.[activeTask];
+
+        if (!isSolved && status !== 'SUCCESS') {
+            interval = setInterval(() => {
+                setElapsedTime(prev => prev + 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [status, activeTask, gameState.phaseProgress]);
+
+    // Reset timer when switching tasks (optional, or keep cumulative?)
+    // User said "calculate time they spend on EACH question".
+    // So we should probably reset or track per task. 
+    // For simplicity in this UI, I'll reset on task switch if not solved.
+    React.useEffect(() => {
+        setElapsedTime(0);
+        // Reset code template based on language
+        if (language === 'c') {
+            setCode('// Write your solution here\n#include <stdio.h>\n\nint main() {\n    // Read input from stdin\n    // Print output to stdout\n    return 0;\n}');
+        } else {
+            setCode('# Write your solution here\nimport sys\n\n# Read input from stdin\n# Print output to stdout');
+        }
+    }, [activeTask, language]);
 
     const solvedParts = gameState.phaseProgress[5]?.solvedParts || [false, false, false];
     const hints = gameState.phaseProgress[5]?.hints || [];
@@ -22,7 +51,7 @@ const FinalPhase = () => {
         setOutput('Testing against hidden cases...');
 
         const task = finalCoding[activeTask];
-        const result = await runCode(code, 54, task.testInput); // 54 = C++
+        const result = await runCode(code, language === 'python' ? 71 : 50, task.testInput);
 
         if (result.error || result.compile_output || result.stderr) {
             setOutput(result.error || result.compile_output || result.stderr);
@@ -106,22 +135,41 @@ const FinalPhase = () => {
                 <div className="lg:col-span-2 flex flex-col gap-4">
                     <div className="glass-card flex-1 overflow-hidden flex flex-col">
                         <div className="bg-white/5 p-2 flex justify-between items-center border-b border-white/10">
-                            <span className="text-xs font-mono text-gray-400">solution.cpp</span>
-                            <button
-                                onClick={handleRun}
-                                disabled={status === 'RUNNING' || solvedParts[activeTask]}
-                                className={`flex items-center gap-2 px-4 py-1 rounded text-sm font-bold transition-colors ${solvedParts[activeTask] ? 'bg-success text-black cursor-default' :
-                                    status === 'RUNNING' ? 'bg-gray-600 cursor-not-allowed' :
-                                        'bg-primary text-black hover:bg-white'
-                                    }`}
-                            >
-                                {status === 'RUNNING' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                                {solvedParts[activeTask] ? 'SOLVED' : status === 'RUNNING' ? 'TESTING' : 'SUBMIT'}
-                            </button>
+                            <div className="flex items-center gap-4">
+                                <select
+                                    className="bg-white/10 text-white text-xs p-1 rounded border border-white/20 cursor-pointer hover:bg-white/20 outline-none"
+                                    value={language}
+                                    onChange={(e) => setLanguage(e.target.value)}
+                                    disabled={solvedParts[activeTask]}
+                                >
+                                    <option value="c" className="bg-gray-900">C</option>
+                                    <option value="python" className="bg-gray-900">Python</option>
+                                </select>
+                                <span className="text-xs font-mono text-gray-400">
+                                    {language === 'python' ? 'solution.py' : 'solution.c'}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <div className="text-mono text-primary font-bold">
+                                    ⏱️ {Math.floor(elapsedTime / 60)}:{String(elapsedTime % 60).padStart(2, '0')}
+                                </div>
+                                <button
+                                    onClick={handleRun}
+                                    disabled={status === 'RUNNING' || solvedParts[activeTask]}
+                                    className={`flex items-center gap-2 px-4 py-1 rounded text-sm font-bold transition-colors ${solvedParts[activeTask] ? 'bg-success text-black cursor-default' :
+                                        status === 'RUNNING' ? 'bg-gray-600 cursor-not-allowed' :
+                                            'bg-primary text-black hover:bg-white'
+                                        }`}
+                                >
+                                    {status === 'RUNNING' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                                    {solvedParts[activeTask] ? 'SOLVED' : status === 'RUNNING' ? 'TESTING' : 'SUBMIT'}
+                                </button>
+                            </div>
                         </div>
                         <Editor
                             height="100%"
-                            defaultLanguage="cpp"
+                            defaultLanguage={language === 'python' ? 'python' : 'c'}
                             value={code}
                             onChange={(value) => setCode(value)}
                             theme="vs-dark"

@@ -1,75 +1,67 @@
 import axios from 'axios';
 
-// Use the proxy path defined in vite.config.js
-const JUDGE0_API_URL = "/api/judge0"; 
-
-const headers = {
-  "content-type": "application/json",
-  "Content-Type": "application/json",
-};
+const GEMINI_API_KEY = "AIzaSyAKzcZhYA5WlUudg76i0bTEpYr4frst_Fc";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
 
 export const runCode = async (source_code, language_id, stdin = "") => {
-  console.log("🚀 Preparing to send code to Judge0...");
+  console.log("🤖 Asking Gemini to judge...");
+
+  // Map ID to name
+  let langName = "C";
+  if (language_id === 71) langName = "Python";
+  if (language_id === 54) langName = "C++";
+  if (language_id === 50) langName = "C";
+
+  const prompt = `
+You are a strict code execution engine. 
+Your task is to simulate the execution of the following ${langName} code with the provided input.
+
+Input (stdin):
+${stdin}
+
+Code:
+${source_code}
+
+Instructions:
+1. Analyze the code logic carefully.
+2. Calculate the exact output based on the input.
+3. If there is a syntax error or compilation error, output the error message.
+4. Return ONLY a JSON object with the following structure (no markdown formatting):
+{
+  "stdout": "actual output here",
+  "stderr": "error message if any",
+  "compile_output": "",
+  "status": { "id": 3, "description": "Accepted" } 
+}
+If there is an error, set status.id to 6 (Compilation Error) or 11 (Runtime Error) and put the message in stderr.
+  `;
+
   try {
-    // 1. Submit Code (wait=false to get token immediately)
-    console.log("POSTing submission...");
-    const submissionResponse = await axios.post(`${JUDGE0_API_URL}/submissions?base64_encoded=false&wait=false`, {
-      source_code,
-      language_id,
-      stdin,
-      redirect_stderr_to_stdout: true
-    }, { 
-      headers,
-      timeout: 10000 // 10s timeout for submission
+    const response = await axios.post(GEMINI_URL, {
+      contents: [{
+        parts: [{ text: prompt }]
+      }]
     });
 
-    const token = submissionResponse.data.token;
-    console.log("Token received:", token);
-    if (!token) throw new Error("No token received from Judge0");
+    const text = response.data.candidates[0].content.parts[0].text;
+    
+    // Clean up markdown if Gemini adds it
+    const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const result = JSON.parse(jsonString);
 
-    // 2. Poll for results
-    let result = null;
-    let attempts = 0;
-    const maxAttempts = 40; // 40 * 500ms = 20 seconds max
-
-    while (attempts < maxAttempts) {
-      console.log(`Polling attempt ${attempts + 1}/${maxAttempts}...`);
-      const statusResponse = await axios.get(`${JUDGE0_API_URL}/submissions/${token}?base64_encoded=false`, { 
-        headers,
-        timeout: 5000 
-      });
-      result = statusResponse.data;
-
-      // Status 1=In Queue, 2=Processing, 3=Accepted, >3=Error/Wrong Answer
-      if (result.status.id >= 3) {
-        console.log("Execution finished with status:", result.status.description);
-        break;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
-    }
-
-    if (!result || result.status.id < 3) {
-      console.error("Polling timed out.");
-      return { error: "Execution timed out. Judge0 is taking too long." };
-    }
-
-    return {
-      stdout: result.stdout || "",
-      stderr: result.stderr || "",
-      compile_output: result.compile_output || "",
-      status: result.status,
-      message: result.message || ""
-    };
+    return result;
 
   } catch (error) {
-    console.error("Judge0 Error Details:", error);
-    if (error.code === 'ECONNABORTED') {
-      return { error: "Network timeout. Is Judge0 running?" };
+    console.error("Gemini API Error:", error);
+    if (error.response) {
+      console.error("Response Data:", error.response.data);
+      console.error("Response Status:", error.response.status);
     }
     return {
-      error: `Execution failed: ${error.message}`
+      stdout: "",
+      stderr: `AI Judge Connection Failed. ${error.response?.data?.error?.message || error.message}`,
+      compile_output: "",
+      status: { id: 13, description: "Internal Error" }
     };
   }
 };
